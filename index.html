@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#315f66">
+  <title>RDO | SEALT Construtora</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <main id="login-view" class="login-page">
+    <section class="login-card">
+      <img src="sealt.png" alt="SEALT Construtora" class="login-logo">
+      <p class="eyebrow">SEALT CONSTRUTORA</p>
+      <h1>Relatório Diário de Obra</h1>
+      <p class="muted">Entre com seu e-mail corporativo para emitir e consultar RDOs.</p>
+      <div id="config-warning" class="alert alert-warning hidden">
+        O banco ainda não foi configurado. Preencha o arquivo <strong>config.js</strong>.
+      </div>
+      <form id="login-form" class="stack" autocomplete="on">
+        <label>E-mail
+          <input id="login-email" type="email" autocomplete="username" required placeholder="nome@empresa.com.br">
+        </label>
+        <label>Senha
+          <input id="login-password" type="password" autocomplete="current-password" required placeholder="Sua senha">
+        </label>
+        <button id="login-button" class="button button-primary button-block" type="submit">Entrar</button>
+      </form>
+    </section>
+  </main>
+
+  <div id="app-view" class="hidden">
+    <header class="app-header">
+      <div class="brand">
+        <img src="sealt.png" alt="SEALT Construtora">
+        <div><strong>RDO SEALT</strong><span>Relatório Diário de Obra</span></div>
+      </div>
+      <div class="user-area">
+        <div><strong id="user-name">Usuário</strong><span id="user-role">Usuário</span></div>
+        <button id="logout-button" class="button button-ghost" type="button">Sair</button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Navegação principal">
+      <button class="tab-button active" type="button" data-tab="rdo">Novo RDO</button>
+      <button class="tab-button" type="button" data-tab="history">Histórico</button>
+      <button id="admin-tab-button" class="tab-button hidden" type="button" data-tab="admin">Administração</button>
+    </nav>
+
+    <main class="page-container">
+      <section id="tab-rdo" class="tab-panel active">
+        <form id="rdo-form">
+          <article class="card">
+            <div class="section-heading">
+              <div><p class="eyebrow">NOVO REGISTRO</p><h1>Relatório Diário de Obra</h1></div>
+              <span class="status-pill">Banco conectado</span>
+            </div>
+            <div class="form-grid form-grid-2">
+              <label>Obra <span class="required">*</span>
+                <select id="work-select" required><option value="">Selecione uma obra</option></select>
+              </label>
+              <label>Relatório nº
+                <input id="report-number" type="text" readonly placeholder="Selecione uma obra">
+                <small>Prévia. O número definitivo é reservado pelo banco ao salvar.</small>
+              </label>
+              <label>Data do relatório <span class="required">*</span>
+                <input id="report-date" type="date" required>
+              </label>
+              <label>Dia da semana
+                <input id="day-of-week" type="text" readonly>
+              </label>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="section-heading compact"><h2>Condição climática</h2></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Período</th><th>Tempo</th><th>Praticável</th></tr></thead>
+                <tbody>
+                  <tr><td>Manhã</td><td><select id="weather-morning"><option>Claro</option><option>Nublado</option><option>Chuvoso</option><option>Parcialmente nublado</option></select></td><td><select id="practicable-morning"><option>Sim</option><option>Não</option><option>Parcialmente</option></select></td></tr>
+                  <tr><td>Tarde</td><td><select id="weather-afternoon"><option>Claro</option><option>Nublado</option><option>Chuvoso</option><option>Parcialmente nublado</option></select></td><td><select id="practicable-afternoon"><option>Sim</option><option>Não</option><option>Parcialmente</option></select></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="section-heading compact"><h2>Mão de obra</h2><span class="summary-badge">Total: <strong id="labor-total">0</strong></span></div>
+            <div class="table-wrap"><table><thead><tr><th>Função</th><th class="quantity-column">Quantidade</th></tr></thead><tbody id="labor-table-body"></tbody></table></div>
+          </article>
+
+          <div class="two-column-layout">
+            <article class="card">
+              <div class="section-heading compact"><h2>Atividades</h2><button id="add-activity-button" class="button button-secondary button-small" type="button">+ Adicionar</button></div>
+              <div id="activities-container" class="dynamic-list empty-list"></div>
+            </article>
+            <article class="card">
+              <div class="section-heading compact"><h2>Ocorrências</h2><button id="add-occurrence-button" class="button button-secondary button-small" type="button">+ Adicionar</button></div>
+              <div id="occurrences-container" class="dynamic-list empty-list"></div>
+            </article>
+          </div>
+
+          <article class="card">
+            <div class="section-heading compact">
+              <div><h2>Fotos</h2><p class="muted small">As imagens originais serão armazenadas junto com o RDO.</p></div>
+              <label class="button button-secondary button-small file-button">+ Selecionar fotos<input id="photo-upload" type="file" multiple accept="image/*"></label>
+            </div>
+            <div id="photo-preview-container" class="photo-grid empty-list"></div>
+          </article>
+
+          <article class="card">
+            <div class="form-grid form-grid-2 align-end">
+              <label>Assinado por <span class="required">*</span><input id="signed-by" type="text" required placeholder="Nome do responsável"></label>
+              <div class="form-actions"><button id="clear-form-button" class="button button-ghost" type="button">Limpar</button><button id="save-rdo-button" class="button button-primary" type="submit">Salvar e gerar PDF</button></div>
+            </div>
+          </article>
+        </form>
+      </section>
+
+      <section id="tab-history" class="tab-panel">
+        <article class="card">
+          <div class="section-heading"><div><p class="eyebrow">CONSULTA</p><h1>Histórico de RDOs</h1></div><button id="refresh-history-button" class="button button-secondary" type="button">Atualizar</button></div>
+          <div class="form-grid form-grid-2 history-filters">
+            <label>Filtrar por obra<select id="history-work-filter"><option value="">Todas as obras</option></select></label>
+            <label>Buscar<input id="history-search" type="search" placeholder="Número, obra ou responsável"></label>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>RDO</th><th>Obra</th><th>Data</th><th>Responsável</th><th>Emitido em</th><th>PDF</th></tr></thead><tbody id="history-table-body"></tbody></table></div>
+          <p id="history-empty" class="empty-message hidden">Nenhum RDO encontrado.</p>
+        </article>
+      </section>
+
+      <section id="tab-admin" class="tab-panel">
+        <div class="admin-grid">
+          <article class="card">
+            <div class="section-heading compact"><div><p class="eyebrow">ÁREA ADMINISTRATIVA</p><h1 id="work-form-title">Cadastrar obra</h1></div></div>
+            <form id="work-form" class="stack">
+              <input id="work-id" type="hidden">
+              <label>Nome da obra <span class="required">*</span><input id="work-name" type="text" required placeholder="Ex.: Reserva do Parque"></label>
+              <label>Último RDO já emitido<input id="work-last-number" type="number" min="0" step="1" value="0" required><small>Para obra nova, use 0. Se o último foi o 35, informe 35.</small></label>
+              <label class="checkbox-label"><input id="work-active" type="checkbox" checked>Obra ativa para emissão de RDO</label>
+              <div class="form-actions start"><button id="cancel-work-edit-button" class="button button-ghost hidden" type="button">Cancelar</button><button class="button button-primary" type="submit">Salvar obra</button></div>
+            </form>
+          </article>
+          <article class="card">
+            <div class="section-heading compact"><div><p class="eyebrow">CADASTRO</p><h1>Obras</h1></div></div>
+            <div class="table-wrap"><table><thead><tr><th>Obra</th><th>Último RDO</th><th>Status</th><th>Ações</th></tr></thead><tbody id="works-table-body"></tbody></table></div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
