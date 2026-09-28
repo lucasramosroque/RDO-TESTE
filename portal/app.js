@@ -99,20 +99,27 @@
   async function loadItems(){state.items=await guarded(()=>rest('protocols','?select=*,protocol_documents(id,filename,path),protocol_events(id,action,note,created_at)&order=created_at.desc'));}
   async function loadUsers(){state.users=await guarded(()=>rest('portal_profiles','?select=id,full_name,email,role,active,can_obras,can_financeiro&order=full_name.asc'));}
   async function navigate(view){state.message='';if(view==='works'&&!state.profile.can_obras)return;if(['finance','new','detail','approvals'].includes(view)&&!state.profile.can_financeiro)return;if(view==='users'&&state.profile.role!=='admin')return;try{if(['finance','approvals'].includes(view))await loadItems();if(['new','users'].includes(view))await loadUsers();state.view=view;render();}catch(e){flash(e.message);}}
-  async function submitProtocol(ev){ev.preventDefault();if(state.busy)return;state.busy=true;const button=ev.target.querySelector('button[type=submit]');button.disabled=true;button.textContent='Enviando…';const f=new FormData(ev.target);const files=[...ev.target.querySelector('#files').files];let record=null;
+  async function submitProtocol(ev){ev.preventDefault();if(state.busy)return;state.busy=true;const button=ev.target.querySelector('button[type=submit]');button.disabled=true;button.textContent='Enviando…';const f=new FormData(ev.target);const files=[...ev.target.querySelector('#files').files];let record=null;let phase='validar os dados';
     try{
       if(!files.length)throw new Error('Anexe pelo menos um documento.');
       if(files.some(x=>x.size>10*1024*1024 || !['application/pdf','image/jpeg','image/png'].includes(x.type)))throw new Error('Use PDF, JPG ou PNG com até 10 MB por arquivo.');
       const amount=Number(f.get('amount'));if(!Number.isFinite(amount))throw new Error('Informe um valor válido.');
       const payload={entity:String(f.get('entity')).trim(),cost_center:String(f.get('cost_center')).trim(),name:String(f.get('name')).trim(),document_no:String(f.get('document_no')).trim(),issue_date:f.get('issue_date'),due_date:f.get('due_date'),amount,category:String(f.get('category')).trim(),protocol_type:String(f.get('protocol_type')).trim(),description:String(f.get('description')).trim(),notes:String(f.get('notes')).trim(),approver_id:f.get('approver_id'),requester_id:state.profile.id};
-      record=state.pendingRecord || (await guarded(()=>rest('protocols','',{method:'POST',body:payload})))[0];state.pendingRecord=record;
+      phase='localizar ou criar o rascunho';
+      const drafts=state.pendingRecord?[]:await guarded(()=>rest('protocols',`?requester_id=eq.${state.profile.id}&status=eq.draft&select=*`));
+      const match=drafts.find(x=>x.issue_date===payload.issue_date && x.name.trim().toLowerCase()===payload.name.toLowerCase() && x.document_no.trim().toLowerCase()===payload.document_no.toLowerCase());
+      record=state.pendingRecord || match || (await guarded(()=>rest('protocols','',{method:'POST',body:payload})))[0];state.pendingRecord=record;
+      phase='consultar os anexos do rascunho';
       const existing=await guarded(()=>rest('protocol_documents',`?protocol_id=eq.${record.id}&select=filename,size_bytes`));
       for(const file of files){if(existing.some(d=>d.filename===file.name&&d.size_bytes===file.size))continue;const suffix=file.name.split('.').pop().toLowerCase();const path=`${record.id}/${crypto.randomUUID()}.${suffix}`;
+        phase=`enviar o arquivo ${file.name}`;
         await guarded(()=>request(`/storage/v1/object/protocol-files/${path}`,{method:'POST',body:file,headers:{'Content-Type':file.type,'x-upsert':'false'}}));
+        phase=`registrar o arquivo ${file.name}`;
         await guarded(()=>rest('protocol_documents','',{method:'POST',body:{protocol_id:record.id,filename:file.name,path,mime_type:file.type,size_bytes:file.size}}));
       }
+      phase='encaminhar ao aprovador';
       await guarded(()=>rpc('submit_protocol',{p_id:record.id}));state.pendingRecord=null;await loadItems();state.view='finance';flash('Protocolo enviado ao aprovador.','success');
-    }catch(e){inlineNotice(ev.target,`${e.message}${record?' O rascunho foi mantido; tente enviar novamente nesta tela.':''}`);}
+    }catch(e){inlineNotice(ev.target,`Falha ao ${phase}: ${e.message}${record?' O rascunho foi mantido; tente novamente nesta tela.':''}`);}
     finally{state.busy=false;button.disabled=false;button.textContent='Protocolar e enviar ao aprovador';}
   }
   async function decide(ev){ev.preventDefault();const decision=ev.submitter?.value;const note=String(new FormData(ev.target).get('note')||'').trim();if(decision==='rejected'&&!note){flash('Descreva o motivo da reprovação.');return;}
